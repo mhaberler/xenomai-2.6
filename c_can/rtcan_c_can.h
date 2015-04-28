@@ -1,13 +1,20 @@
 /*
- * CAN bus driver for Bosch C_CAN controller
+ * CAN bus driver for Bosch C_CAN controller, ported to Xenomai RTDM
  *
- * Copyright (C) 2010 ST Microelectronics
- * Bhupesh Sharma <bhupesh.sharma@st.com>
  *
+ * Stephen J. Battazzo <stephen.j.battazzo@nasa.gov>, 
+ * MEI Services/NASA Ames Research Center
+ *
+ * Borrowed original driver from:
+ * 
+ * Bhupesh Sharma <bhupesh.sharma@st.com>, ST Microelectronics
  * Borrowed heavily from the C_CAN driver originally written by:
  * Copyright (C) 2007
  * - Sascha Hauer, Marc Kleine-Budde, Pengutronix <s.hauer@pengutronix.de>
  * - Simon Kallweit, intefo AG <simon.kallweit@intefo.ch>
+ *
+ * TX and RX NAPI implementation has been removed and replaced with RT Socket CAN implementation.
+ * RT Socket CAN implementation inspired by Flexcan RTDM port by Wolfgang Grandegger <wg@denx.de>
  *
  * Bosch C_CAN controller is compliant to CAN protocol version 2.0 part A and B.
  * Bosch C_CAN user manual can be obtained from:
@@ -19,8 +26,8 @@
  * warranty of any kind, whether express or implied.
  */
 
-#ifndef C_CAN_H
-#define C_CAN_H
+#ifndef RTCAN_C_CAN_H
+#define RTCAN_C_CAN_H
 
 enum reg {
 	C_CAN_CTRL_REG = 0,
@@ -63,7 +70,7 @@ enum reg {
 	C_CAN_MSGVAL2_REG,
 };
 
-static const u16 reg_map_c_can[] = {
+static u16 reg_map_c_can[] = {
 	[C_CAN_CTRL_REG]	= 0x00,
 	[C_CAN_STS_REG]		= 0x02,
 	[C_CAN_ERR_CNT_REG]	= 0x04,
@@ -103,7 +110,7 @@ static const u16 reg_map_c_can[] = {
 	[C_CAN_MSGVAL2_REG]	= 0xB2,
 };
 
-static const u16 reg_map_d_can[] = {
+static u16 reg_map_d_can[] = {
 	[C_CAN_CTRL_REG]	= 0x00,
 	[C_CAN_CTRL_EX_REG]	= 0x02,
 	[C_CAN_STS_REG]		= 0x04,
@@ -150,12 +157,18 @@ enum c_can_dev_id {
 	BOSCH_D_CAN,
 };
 
+#define DEV_NAME	"rtcan%d"
+#define DRV_NAME	"c_can"
+
 /* c_can private data structure */
 struct c_can_priv {
-	struct can_priv can;	/* must be the first member */
-	struct napi_struct napi;
-	struct net_device *dev;
+	struct rtcan_device *dev;
+
+	int irq;
+	
 	struct device *device;
+	
+	struct can_bittime bit_time;
 	int tx_object;
 	int current_status;
 	int last_status;
@@ -174,14 +187,23 @@ struct c_can_priv {
 	void (*raminit) (const struct c_can_priv *priv, bool enable);
 };
 
-struct net_device *alloc_c_can_dev(void);
-void free_c_can_dev(struct net_device *dev);
-int register_c_can_dev(struct net_device *dev);
-void unregister_c_can_dev(struct net_device *dev);
+struct rtcan_device *alloc_c_can_dev(void);
+
+int register_c_candev(struct rtcan_device *dev);
+void unregister_c_candev(struct rtcan_device *dev);
+int c_can_interrupt(rtdm_irq_t *irq_handle);
+int c_can_start_xmit(struct rtcan_device *dev, struct can_frame *cf);
+int c_can_set_bittiming(struct rtcan_device *dev);
+int c_can_set_mode(struct rtcan_device *dev, can_mode_t mode, rtdm_lockctx_t *lock_ctx);
+int c_can_save_bit_time(struct rtcan_device *dev,
+			struct can_bittime *bt,
+			rtdm_lockctx_t *lock_ctx);
+extern struct can_bittiming_const c_can_bittiming_const;
 
 #ifdef CONFIG_PM
-int c_can_power_up(struct net_device *dev);
-int c_can_power_down(struct net_device *dev);
+int c_can_power_up(struct rtcan_device *dev);
+int c_can_power_down(struct rtcan_device *dev);
 #endif
 
-#endif /* C_CAN_H */
+
+#endif
